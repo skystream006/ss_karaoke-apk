@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SS Karaoke</string>
+    <string name="save_password_title">Save Password?</string>
+    <string name="save_password_message">Would you like to save your login credentials for this site?</string>
+    <string name="save">Save</string>
+    <string name="dont_save">Don\'t Save</string>
+    <string name="password_saved">Password saved.</string>
+    <string name="error_title">Connection Error</string>
+    <string name="no_internet">No internet connection. Please check your network and try again.</string>
+    <string name="retry">Retry</string>
+    <string name="navigation_blocked">This app only accesses the Karaoke Party website.</string>
+</resources>
