@@ -1,0 +1,15 @@
+# Gradle caches and local state
+.gradle/
+build/
+app/build/
+
+# Local configuration (contains machine-specific SDK paths)
+local.properties
+
+# IDE files
+*.iml
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
