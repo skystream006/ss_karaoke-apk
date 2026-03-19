@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -70,6 +71,14 @@ class MainActivity : AppCompatActivity() {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** Forward mouse hover and scroll-wheel events to the WebView so a connected mouse works. */
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (binding.webView.onGenericMotionEvent(event)) {
+            return true
+        }
+        return super.onGenericMotionEvent(event)
     }
 
     // ---------------------------------------------------------------------------
