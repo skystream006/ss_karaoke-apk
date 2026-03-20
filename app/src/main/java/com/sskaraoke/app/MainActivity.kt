@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.SystemClock
+import android.text.InputType
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -18,6 +19,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.activity.OnBackPressedCallback
@@ -292,25 +294,49 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Auto-fills saved credentials into the first login form found on the page.
+     * Auto-fills the stored password into the site's password field and clicks the "Enter" button.
+     * Uses a polling retry (up to 10 attempts × 500 ms) to handle SPA pages that render
+     * their password prompt after the initial page-load event.
      */
     private fun tryAutoFill(view: WebView) {
         val prefs = getEncryptedPrefs() ?: return
         if (!prefs.getBoolean(KEY_HAS_CREDENTIALS, false)) return
 
-        val username = prefs.getString(KEY_USERNAME, "") ?: return
         val password = prefs.getString(KEY_PASSWORD, "") ?: return
-        if (username.isEmpty() || password.isEmpty()) return
+        if (password.isEmpty()) return
 
-        val escapedUser = username.replace("\\", "\\\\").replace("'", "\\'")
         val escapedPass = password.replace("\\", "\\\\").replace("'", "\\'")
 
         val script = """
             (function() {
-                var userField = document.querySelector('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"], input[name*="email"]');
-                var passField = document.querySelector('input[type="password"]');
-                if (userField) userField.value = '$escapedUser';
-                if (passField) passField.value = '$escapedPass';
+                var maxAttempts = 10;
+                var attempt = 0;
+                function tryFill() {
+                    attempt++;
+                    var passField = document.querySelector('input[type="password"]');
+                    if (passField) {
+                        passField.focus();
+                        passField.value = '$escapedPass';
+                        passField.dispatchEvent(new Event('input', {bubbles: true}));
+                        passField.dispatchEvent(new Event('change', {bubbles: true}));
+                        var btn = document.querySelector('button[type="submit"], input[type="submit"]');
+                        if (!btn) {
+                            var buttons = document.querySelectorAll('button');
+                            for (var i = 0; i < buttons.length; i++) {
+                                if (/enter/i.test(buttons[i].textContent.trim())) {
+                                    btn = buttons[i];
+                                    break;
+                                }
+                            }
+                        }
+                        if (btn) btn.click();
+                        return;
+                    }
+                    if (attempt < maxAttempts) {
+                        setTimeout(tryFill, 500);
+                    }
+                }
+                tryFill();
             })();
         """.trimIndent()
         view.evaluateJavascript(script, null)
@@ -392,11 +418,49 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------------
 
     private fun loadKaraokeWebsite() {
+        val prefs = getEncryptedPrefs()
+        if (prefs != null && !prefs.getBoolean(KEY_HAS_CREDENTIALS, false)) {
+            promptForPassword()
+            return
+        }
+        // Either encrypted prefs are unavailable (crypto error) or password is already stored – proceed.
         if (isNetworkAvailable()) {
             binding.webView.loadUrl(TARGET_URL)
         } else {
             showError(getString(R.string.no_internet))
         }
+    }
+
+    /**
+     * Shows a dialog asking the user to enter the site password.
+     * The dialog cannot be dismissed without providing a non-empty password.
+     * Once saved, the website is loaded immediately.
+     */
+    private fun promptForPassword() {
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = getString(R.string.password_hint)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.enter_password_title)
+            .setMessage(R.string.enter_password_message)
+            .setView(input)
+            .setCancelable(false)
+            .setPositiveButton(R.string.save, null) // listener set below to prevent auto-dismiss
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val password = input.text.toString()
+                if (password.isBlank()) {
+                    input.error = getString(R.string.password_required)
+                } else {
+                    saveCredentials("", password) // password-only prompt; username is not needed here
+                    dialog.dismiss()
+                    loadKaraokeWebsite()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun isNetworkAvailable(): Boolean {
