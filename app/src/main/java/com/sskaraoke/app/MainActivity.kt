@@ -6,9 +6,12 @@ import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -31,12 +34,23 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_USERNAME = "saved_username"
         private const val KEY_PASSWORD = "saved_password"
         private const val KEY_HAS_CREDENTIALS = "has_credentials"
+
+        /** Size of the cursor indicator in dp. Must match the layout dimension. */
+        private const val CURSOR_SIZE_DP = 24f
+        /** Pixels to move the cursor per D-pad press (at 1× density ≈ 40 px). */
+        private const val CURSOR_STEP_DP = 40f
+        /** Duration in ms between synthetic ACTION_DOWN and ACTION_UP for a cursor click. */
+        private const val CLICK_DURATION_MS = 100L
     }
 
     private lateinit var binding: ActivityMainBinding
     private var pendingUsername: String = ""
     private var pendingPassword: String = ""
     private var isPageLoaded = false
+
+    // Cursor mode – active by default so the app starts in pointer/cursor navigation.
+    private var cursorX = 0f
+    private var cursorY = 0f
 
     // ---------------------------------------------------------------------------
     // Lifecycle
@@ -67,6 +81,32 @@ class MainActivity : AppCompatActivity() {
 
     /** Forward D-pad / remote keys to the WebView so navigation works on TV. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (isPageLoaded) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        val step = CURSOR_STEP_DP * resources.displayMetrics.density
+                        when (event.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP    -> moveCursor(0f, -step)
+                            KeyEvent.KEYCODE_DPAD_DOWN  -> moveCursor(0f,  step)
+                            KeyEvent.KEYCODE_DPAD_LEFT  -> moveCursor(-step, 0f)
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> moveCursor( step, 0f)
+                        }
+                    }
+                    // Consume both DOWN and UP so the WebView's built-in D-pad focus
+                    // navigation never activates while cursor mode is in use.
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) performCursorClick()
+                    return true
+                }
+            }
+        }
         if (isPageLoaded && binding.webView.dispatchKeyEvent(event)) {
             return true
         }
@@ -75,10 +115,60 @@ class MainActivity : AppCompatActivity() {
 
     /** Forward mouse hover and scroll-wheel events to the WebView so a connected mouse works. */
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        // Keep the cursor indicator in sync when a real mouse is used.
+        if (event.action == MotionEvent.ACTION_HOVER_MOVE) {
+            cursorX = event.x.coerceIn(0f, binding.webView.width.toFloat())
+            cursorY = event.y.coerceIn(0f, binding.webView.height.toFloat())
+            updateCursorPosition()
+        }
         if (binding.webView.onGenericMotionEvent(event)) {
             return true
         }
         return super.onGenericMotionEvent(event)
+    }
+
+    // ---------------------------------------------------------------------------
+    // Cursor mode helpers
+    // ---------------------------------------------------------------------------
+
+    /** Move the virtual cursor by (dx, dy) pixels, clamp to the WebView bounds, then
+     *  refresh the overlay and inject a synthetic hover event so the page reacts. */
+    private fun moveCursor(dx: Float, dy: Float) {
+        val webView = binding.webView
+        cursorX = (cursorX + dx).coerceIn(0f, webView.width.toFloat())
+        cursorY = (cursorY + dy).coerceIn(0f, webView.height.toFloat())
+        updateCursorPosition()
+        injectHoverEvent()
+    }
+
+    /** Position the cursor overlay View so its centre sits at (cursorX, cursorY). */
+    private fun updateCursorPosition() {
+        val halfPx = CURSOR_SIZE_DP * resources.displayMetrics.density / 2f
+        binding.cursor.translationX = cursorX - halfPx
+        binding.cursor.translationY = cursorY - halfPx
+    }
+
+    /** Inject a synthetic hover-move event at the current cursor position so the
+     *  WebView (and thus the page's CSS :hover rules) responds to cursor movement. */
+    private fun injectHoverEvent() {
+        val webView = binding.webView
+        val now = SystemClock.uptimeMillis()
+        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_HOVER_MOVE, cursorX, cursorY, 0)
+        event.source = InputDevice.SOURCE_MOUSE
+        webView.onGenericMotionEvent(event)
+        event.recycle()
+    }
+
+    /** Inject a synthetic tap (ACTION_DOWN + ACTION_UP) at the current cursor position. */
+    private fun performCursorClick() {
+        val webView = binding.webView
+        val now = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(now, now,                    MotionEvent.ACTION_DOWN, cursorX, cursorY, 0)
+        val up   = MotionEvent.obtain(now, now + CLICK_DURATION_MS, MotionEvent.ACTION_UP,   cursorX, cursorY, 0)
+        webView.onTouchEvent(down)
+        webView.onTouchEvent(up)
+        down.recycle()
+        up.recycle()
     }
 
     // ---------------------------------------------------------------------------
@@ -155,6 +245,16 @@ class MainActivity : AppCompatActivity() {
                 binding.progressBar.progress = newProgress
             }
         }
+
+        // Position the cursor at the centre of the WebView once its size is known.
+        webView.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                webView.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                cursorX = webView.width / 2f
+                cursorY = webView.height / 2f
+                updateCursorPosition()
+            }
+        })
     }
 
     // ---------------------------------------------------------------------------
