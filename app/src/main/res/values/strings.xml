@@ -10,4 +10,8 @@
     <string name="no_internet">No internet connection. Please check your network and try again.</string>
     <string name="retry">Retry</string>
     <string name="navigation_blocked">This app only accesses the Karaoke Party website.</string>
+    <string name="enter_password_title">Password Required</string>
+    <string name="enter_password_message">Please enter the password for the Karaoke site.</string>
+    <string name="password_hint">Password</string>
+    <string name="password_required">Password cannot be empty.</string>
 </resources>
