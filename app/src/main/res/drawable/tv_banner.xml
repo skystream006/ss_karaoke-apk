@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- TV Banner: 320x180 dp -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <gradient
-        android:angle="135"
-        android:centerColor="#FF6200EE"
-        android:endColor="#FF3700B3"
-        android:startColor="#FF9C27B0"
-        android:type="linear" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background gradient -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="135"
+                android:centerColor="#FF6200EE"
+                android:endColor="#FF3700B3"
+                android:startColor="#FF9C27B0"
+                android:type="linear" />
+        </shape>
+    </item>
+    <!-- App icon centered over the background -->
+    <item
+        android:drawable="@drawable/app_icon"
+        android:gravity="center" />
+</layer-list>
