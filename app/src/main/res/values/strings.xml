@@ -14,4 +14,7 @@
     <string name="enter_password_message">Please enter the password for the Karaoke site.</string>
     <string name="password_hint">Password</string>
     <string name="password_required">Password cannot be empty.</string>
+    <string name="cursor_mode_title">Cursor Mode</string>
+    <string name="cursor_mode_on">Enabled</string>
+    <string name="cursor_mode_off">Disabled</string>
 </resources>

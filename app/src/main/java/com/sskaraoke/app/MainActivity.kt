@@ -37,6 +37,9 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_PASSWORD = "saved_password"
         private const val KEY_HAS_CREDENTIALS = "has_credentials"
 
+        private const val PREFS_SETTINGS = "ss_karaoke_settings"
+        private const val KEY_CURSOR_MODE = "cursor_mode_enabled"
+
         /** Size of the cursor indicator in dp. Must match the layout dimension. */
         private const val CURSOR_SIZE_DP = 24f
         /** Pixels to move the cursor per D-pad press (at 1× density ≈ 40 px). */
@@ -50,7 +53,8 @@ class MainActivity : AppCompatActivity() {
     private var pendingPassword: String = ""
     private var isPageLoaded = false
 
-    // Cursor mode – active by default so the app starts in pointer/cursor navigation.
+    // Cursor mode – toggled by the user via the Menu key; persisted in SharedPreferences.
+    private var cursorEnabled = true
     private var cursorX = 0f
     private var cursorY = 0f
 
@@ -65,6 +69,7 @@ class MainActivity : AppCompatActivity() {
 
         setupBackNavigation()
         setupWebView()
+        loadCursorSetting()
         loadKaraokeWebsite()
     }
 
@@ -84,28 +89,34 @@ class MainActivity : AppCompatActivity() {
     /** Forward D-pad / remote keys to the WebView so navigation works on TV. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (isPageLoaded) {
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_DPAD_UP,
-                KeyEvent.KEYCODE_DPAD_DOWN,
-                KeyEvent.KEYCODE_DPAD_LEFT,
-                KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if (event.action == KeyEvent.ACTION_DOWN) {
-                        val step = CURSOR_STEP_DP * resources.displayMetrics.density
-                        when (event.keyCode) {
-                            KeyEvent.KEYCODE_DPAD_UP    -> moveCursor(0f, -step)
-                            KeyEvent.KEYCODE_DPAD_DOWN  -> moveCursor(0f,  step)
-                            KeyEvent.KEYCODE_DPAD_LEFT  -> moveCursor(-step, 0f)
-                            KeyEvent.KEYCODE_DPAD_RIGHT -> moveCursor( step, 0f)
+            if (event.keyCode == KeyEvent.KEYCODE_MENU && event.action == KeyEvent.ACTION_UP) {
+                showCursorSettings()
+                return true
+            }
+            if (cursorEnabled) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (event.action == KeyEvent.ACTION_DOWN) {
+                            val step = CURSOR_STEP_DP * resources.displayMetrics.density
+                            when (event.keyCode) {
+                                KeyEvent.KEYCODE_DPAD_UP    -> moveCursor(0f, -step)
+                                KeyEvent.KEYCODE_DPAD_DOWN  -> moveCursor(0f,  step)
+                                KeyEvent.KEYCODE_DPAD_LEFT  -> moveCursor(-step, 0f)
+                                KeyEvent.KEYCODE_DPAD_RIGHT -> moveCursor( step, 0f)
+                            }
                         }
+                        // Consume both DOWN and UP so the WebView's built-in D-pad focus
+                        // navigation never activates while cursor mode is in use.
+                        return true
                     }
-                    // Consume both DOWN and UP so the WebView's built-in D-pad focus
-                    // navigation never activates while cursor mode is in use.
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_CENTER,
-                KeyEvent.KEYCODE_ENTER -> {
-                    if (event.action == KeyEvent.ACTION_DOWN) performCursorClick()
-                    return true
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER -> {
+                        if (event.action == KeyEvent.ACTION_DOWN) performCursorClick()
+                        return true
+                    }
                 }
             }
         }
@@ -118,7 +129,7 @@ class MainActivity : AppCompatActivity() {
     /** Forward mouse hover and scroll-wheel events to the WebView so a connected mouse works. */
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         // Keep the cursor indicator in sync when a real mouse is used.
-        if (event.action == MotionEvent.ACTION_HOVER_MOVE) {
+        if (cursorEnabled && event.action == MotionEvent.ACTION_HOVER_MOVE) {
             cursorX = event.x.coerceIn(0f, binding.webView.width.toFloat())
             cursorY = event.y.coerceIn(0f, binding.webView.height.toFloat())
             updateCursorPosition()
@@ -132,6 +143,43 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------------
     // Cursor mode helpers
     // ---------------------------------------------------------------------------
+
+    /** Load the persisted cursor-mode setting and apply it to the overlay visibility. */
+    private fun loadCursorSetting() {
+        cursorEnabled = getSharedPreferences(PREFS_SETTINGS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CURSOR_MODE, true)
+        applyCursorVisibility()
+    }
+
+    /** Persist and apply the cursor-mode toggle. */
+    private fun setCursorEnabled(enabled: Boolean) {
+        cursorEnabled = enabled
+        getSharedPreferences(PREFS_SETTINGS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_CURSOR_MODE, enabled).apply()
+        applyCursorVisibility()
+    }
+
+    /** Show or hide the cursor overlay to match the current [cursorEnabled] state. */
+    private fun applyCursorVisibility() {
+        binding.cursor.visibility = if (cursorEnabled) View.VISIBLE else View.GONE
+    }
+
+    /** Show a dialog that lets the user enable or disable cursor mode.
+     *  Triggered by the Menu key on the remote control. */
+    private fun showCursorSettings() {
+        val currentIndex = if (cursorEnabled) 0 else 1
+        AlertDialog.Builder(this)
+            .setTitle(R.string.cursor_mode_title)
+            .setSingleChoiceItems(
+                arrayOf(getString(R.string.cursor_mode_on), getString(R.string.cursor_mode_off)),
+                currentIndex
+            ) { dialog, which ->
+                setCursorEnabled(which == 0)
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 
     /** Move the virtual cursor by (dx, dy) pixels, clamp to the WebView bounds, then
      *  refresh the overlay and inject a synthetic hover event so the page reacts. */
