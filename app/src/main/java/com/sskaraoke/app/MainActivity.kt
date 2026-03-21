@@ -2,6 +2,7 @@ package com.sskaraoke.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -50,7 +51,8 @@ class MainActivity : AppCompatActivity() {
     private var pendingPassword: String = ""
     private var isPageLoaded = false
 
-    // Cursor mode – active by default so the app starts in pointer/cursor navigation.
+    // Cursor mode – disabled on mobile phones (touch devices), enabled on TV/non-phone devices.
+    private var cursorModeEnabled = true
     private var cursorX = 0f
     private var cursorY = 0f
 
@@ -62,6 +64,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        cursorModeEnabled = !isMobilePhone()
+        if (!cursorModeEnabled) binding.cursor.visibility = View.GONE
 
         setupBackNavigation()
         setupWebView()
@@ -83,7 +88,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Forward D-pad / remote keys to the WebView so navigation works on TV. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (isPageLoaded) {
+        if (isPageLoaded && cursorModeEnabled) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_DPAD_DOWN,
@@ -118,7 +123,7 @@ class MainActivity : AppCompatActivity() {
     /** Forward mouse hover and scroll-wheel events to the WebView so a connected mouse works. */
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         // Keep the cursor indicator in sync when a real mouse is used.
-        if (event.action == MotionEvent.ACTION_HOVER_MOVE) {
+        if (cursorModeEnabled && event.action == MotionEvent.ACTION_HOVER_MOVE) {
             cursorX = event.x.coerceIn(0f, binding.webView.width.toFloat())
             cursorY = event.y.coerceIn(0f, binding.webView.height.toFloat())
             updateCursorPosition()
@@ -252,9 +257,11 @@ class MainActivity : AppCompatActivity() {
         webView.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 webView.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                cursorX = webView.width / 2f
-                cursorY = webView.height / 2f
-                updateCursorPosition()
+                if (cursorModeEnabled) {
+                    cursorX = webView.width / 2f
+                    cursorY = webView.height / 2f
+                    updateCursorPosition()
+                }
             }
         })
     }
@@ -411,6 +418,25 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
             null
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Device detection
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Returns true when running on a mobile phone (has telephony, no Leanback/TV feature,
+     * and a phone-sized screen with smallest width < 600 dp).
+     * Cursor mode is only useful on TV/non-touch devices where D-pad navigation is the
+     * primary input method; on phones the touchscreen is sufficient.
+     * Tablets (≥ 600 dp smallest width) keep cursor mode enabled even when they have telephony.
+     */
+    private fun isMobilePhone(): Boolean {
+        val pm = packageManager
+        if (!pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) return false
+        if (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return false
+        // Phones have a smallest screen width below 600 dp; tablets/large devices do not.
+        return resources.configuration.smallestScreenWidthDp < 600
     }
 
     // ---------------------------------------------------------------------------
