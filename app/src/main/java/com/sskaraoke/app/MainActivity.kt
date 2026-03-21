@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         cursorModeEnabled = !isMobilePhone()
-        if (!cursorModeEnabled) binding.cursor.visibility = View.GONE
+        if (cursorModeEnabled) binding.cursor.visibility = View.VISIBLE
 
         setupBackNavigation()
         setupWebView()
