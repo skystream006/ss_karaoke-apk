@@ -1,5 +1,6 @@
 package com.sskaraoke.app
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
@@ -14,6 +15,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewTreeObserver
+import android.view.animation.DecelerateInterpolator
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -44,6 +46,8 @@ class MainActivity : AppCompatActivity() {
         private const val CURSOR_STEP_DP = 40f
         /** Duration in ms between synthetic ACTION_DOWN and ACTION_UP for a cursor click. */
         private const val CLICK_DURATION_MS = 100L
+        /** Duration in ms for the smooth cursor movement animation. */
+        private const val CURSOR_ANIM_DURATION_MS = 120L
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -55,6 +59,10 @@ class MainActivity : AppCompatActivity() {
     private var cursorModeEnabled = true
     private var cursorX = 0f
     private var cursorY = 0f
+    // Current rendered position of the cursor overlay (animated toward cursorX/cursorY).
+    private var displayX = 0f
+    private var displayY = 0f
+    private var cursorAnimator: ValueAnimator? = null
 
     // ---------------------------------------------------------------------------
     // Lifecycle
@@ -71,6 +79,12 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         setupWebView()
         loadKaraokeWebsite()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cursorAnimator?.cancel()
+        cursorAnimator = null
     }
 
     private fun setupBackNavigation() {
@@ -126,6 +140,8 @@ class MainActivity : AppCompatActivity() {
         if (cursorModeEnabled && event.action == MotionEvent.ACTION_HOVER_MOVE) {
             cursorX = event.x.coerceIn(0f, binding.webView.width.toFloat())
             cursorY = event.y.coerceIn(0f, binding.webView.height.toFloat())
+            displayX = cursorX
+            displayY = cursorY
             updateCursorPosition()
         }
         if (binding.webView.onGenericMotionEvent(event)) {
@@ -139,39 +155,67 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------------
 
     /** Move the virtual cursor by (dx, dy) pixels, clamp to the WebView bounds, then
-     *  refresh the overlay and inject a synthetic hover event so the page reacts. */
+     *  animate the overlay smoothly to the new position and inject a synthetic hover event
+     *  on each animation frame so the page reacts to cursor movement in real time. */
     private fun moveCursor(dx: Float, dy: Float) {
         val webView = binding.webView
         cursorX = (cursorX + dx).coerceIn(0f, webView.width.toFloat())
         cursorY = (cursorY + dy).coerceIn(0f, webView.height.toFloat())
-        updateCursorPosition()
-        injectHoverEvent()
+
+        // Cancel any in-progress animation and start a new one from the current
+        // rendered position to the new target, so rapid D-pad presses chain smoothly.
+        cursorAnimator?.cancel()
+        cursorAnimator?.removeAllUpdateListeners()
+        val startX = displayX
+        val startY = displayY
+        val endX = cursorX
+        val endY = cursorY
+
+        cursorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = CURSOR_ANIM_DURATION_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val t = anim.animatedValue as Float
+                displayX = startX + (endX - startX) * t
+                displayY = startY + (endY - startY) * t
+                updateCursorPosition()
+                injectHoverEvent()
+            }
+            start()
+        }
     }
 
-    /** Position the cursor overlay View so its centre sits at (cursorX, cursorY). */
+    /** Position the cursor overlay View so its centre sits at (displayX, displayY). */
     private fun updateCursorPosition() {
         val halfPx = CURSOR_SIZE_DP * resources.displayMetrics.density / 2f
-        binding.cursor.translationX = cursorX - halfPx
-        binding.cursor.translationY = cursorY - halfPx
+        binding.cursor.translationX = displayX - halfPx
+        binding.cursor.translationY = displayY - halfPx
     }
 
-    /** Inject a synthetic hover-move event at the current cursor position so the
+    /** Inject a synthetic hover-move event at the current rendered cursor position so the
      *  WebView (and thus the page's CSS :hover rules) responds to cursor movement. */
     private fun injectHoverEvent() {
         val webView = binding.webView
         val now = SystemClock.uptimeMillis()
-        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_HOVER_MOVE, cursorX, cursorY, 0)
+        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_HOVER_MOVE, displayX, displayY, 0)
         event.source = InputDevice.SOURCE_MOUSE
         webView.onGenericMotionEvent(event)
         event.recycle()
     }
 
-    /** Inject a synthetic tap (ACTION_DOWN + ACTION_UP) at the current cursor position. */
+    /** Inject a synthetic tap (ACTION_DOWN + ACTION_UP) at the current cursor position.
+     *  Any running movement animation is cancelled first so the click lands exactly where
+     *  the user sees the cursor. */
     private fun performCursorClick() {
+        cursorAnimator?.cancel()
+        displayX = cursorX
+        displayY = cursorY
+        updateCursorPosition()
+
         val webView = binding.webView
         val now = SystemClock.uptimeMillis()
-        val down = MotionEvent.obtain(now, now,                    MotionEvent.ACTION_DOWN, cursorX, cursorY, 0)
-        val up   = MotionEvent.obtain(now, now + CLICK_DURATION_MS, MotionEvent.ACTION_UP,   cursorX, cursorY, 0)
+        val down = MotionEvent.obtain(now, now,                    MotionEvent.ACTION_DOWN, displayX, displayY, 0)
+        val up   = MotionEvent.obtain(now, now + CLICK_DURATION_MS, MotionEvent.ACTION_UP,   displayX, displayY, 0)
         webView.onTouchEvent(down)
         webView.onTouchEvent(up)
         down.recycle()
@@ -260,6 +304,8 @@ class MainActivity : AppCompatActivity() {
                 if (cursorModeEnabled) {
                     cursorX = webView.width / 2f
                     cursorY = webView.height / 2f
+                    displayX = cursorX
+                    displayY = cursorY
                     updateCursorPosition()
                 }
             }
