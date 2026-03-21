@@ -1,6 +1,5 @@
 package com.sskaraoke.app
 
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
@@ -10,13 +9,14 @@ import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.SystemClock
 import android.text.InputType
+import android.view.Choreographer
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewTreeObserver
-import android.view.animation.DecelerateInterpolator
 import android.webkit.JavascriptInterface
+import kotlin.math.abs
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -46,8 +46,13 @@ class MainActivity : AppCompatActivity() {
         private const val CURSOR_STEP_DP = 40f
         /** Duration in ms between synthetic ACTION_DOWN and ACTION_UP for a cursor click. */
         private const val CLICK_DURATION_MS = 100L
-        /** Duration in ms for the smooth cursor movement animation. */
-        private const val CURSOR_ANIM_DURATION_MS = 120L
+        /**
+         * Per-frame lerp factor used by the Choreographer-based cursor animation.
+         * Each frame the cursor closes this fraction of the remaining distance to the target.
+         * At 60 fps a factor of 0.30 reaches ~97 % of the target in ~10 frames (≈ 167 ms),
+         * giving a natural spring-like feel without any abrupt restarts on rapid D-pad presses.
+         */
+        private const val CURSOR_LERP_FACTOR = 0.30f
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -62,7 +67,32 @@ class MainActivity : AppCompatActivity() {
     // Current rendered position of the cursor overlay (animated toward cursorX/cursorY).
     private var displayX = 0f
     private var displayY = 0f
-    private var cursorAnimator: ValueAnimator? = null
+    private var isCursorAnimating = false
+
+    /**
+     * Choreographer callback that runs every vsync frame while the cursor is moving.
+     * It lerps [displayX]/[displayY] toward the [cursorX]/[cursorY] target using
+     * [CURSOR_LERP_FACTOR], which produces a smooth spring-like deceleration without
+     * any abrupt restarts when the target changes mid-animation (e.g. rapid D-pad presses).
+     */
+    private val cursorFrameCallback = Choreographer.FrameCallback {
+        val dx = cursorX - displayX
+        val dy = cursorY - displayY
+        if (abs(dx) < 0.5f && abs(dy) < 0.5f) {
+            // Close enough – snap to target and stop animating.
+            displayX = cursorX
+            displayY = cursorY
+            updateCursorPosition()
+            injectHoverEvent()
+            isCursorAnimating = false
+        } else {
+            displayX += dx * CURSOR_LERP_FACTOR
+            displayY += dy * CURSOR_LERP_FACTOR
+            updateCursorPosition()
+            injectHoverEvent()
+            Choreographer.getInstance().postFrameCallback(cursorFrameCallback)
+        }
+    }
 
     // ---------------------------------------------------------------------------
     // Lifecycle
@@ -83,8 +113,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        cursorAnimator?.cancel()
-        cursorAnimator = null
+        Choreographer.getInstance().removeFrameCallback(cursorFrameCallback)
+        isCursorAnimating = false
     }
 
     private fun setupBackNavigation() {
@@ -154,34 +184,18 @@ class MainActivity : AppCompatActivity() {
     // Cursor mode helpers
     // ---------------------------------------------------------------------------
 
-    /** Move the virtual cursor by (dx, dy) pixels, clamp to the WebView bounds, then
-     *  animate the overlay smoothly to the new position and inject a synthetic hover event
-     *  on each animation frame so the page reacts to cursor movement in real time. */
+    /** Move the virtual cursor by (dx, dy) pixels and clamp to the WebView bounds.
+     *  The Choreographer callback will smoothly lerp the overlay toward the new target
+     *  on every vsync frame, so rapid D-pad presses simply update the target and the
+     *  animation continues without any abrupt restart. */
     private fun moveCursor(dx: Float, dy: Float) {
         val webView = binding.webView
         cursorX = (cursorX + dx).coerceIn(0f, webView.width.toFloat())
         cursorY = (cursorY + dy).coerceIn(0f, webView.height.toFloat())
 
-        // Cancel any in-progress animation and start a new one from the current
-        // rendered position to the new target, so rapid D-pad presses chain smoothly.
-        cursorAnimator?.cancel()
-        cursorAnimator?.removeAllUpdateListeners()
-        val startX = displayX
-        val startY = displayY
-        val endX = cursorX
-        val endY = cursorY
-
-        cursorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = CURSOR_ANIM_DURATION_MS
-            interpolator = DecelerateInterpolator()
-            addUpdateListener { anim ->
-                val t = anim.animatedValue as Float
-                displayX = startX + (endX - startX) * t
-                displayY = startY + (endY - startY) * t
-                updateCursorPosition()
-                injectHoverEvent()
-            }
-            start()
+        if (!isCursorAnimating) {
+            isCursorAnimating = true
+            Choreographer.getInstance().postFrameCallback(cursorFrameCallback)
         }
     }
 
@@ -204,10 +218,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Inject a synthetic tap (ACTION_DOWN + ACTION_UP) at the current cursor position.
-     *  Any running movement animation is cancelled first so the click lands exactly where
+     *  Any running movement animation is stopped first so the click lands exactly where
      *  the user sees the cursor. */
     private fun performCursorClick() {
-        cursorAnimator?.cancel()
+        Choreographer.getInstance().removeFrameCallback(cursorFrameCallback)
+        isCursorAnimating = false
         displayX = cursorX
         displayY = cursorY
         updateCursorPosition()
