@@ -75,22 +75,24 @@ class MainActivity : AppCompatActivity() {
      * [CURSOR_LERP_FACTOR], which produces a smooth spring-like deceleration without
      * any abrupt restarts when the target changes mid-animation (e.g. rapid D-pad presses).
      */
-    private val cursorFrameCallback: Choreographer.FrameCallback = Choreographer.FrameCallback {
-        val dx = cursorX - displayX
-        val dy = cursorY - displayY
-        if (abs(dx) < 0.5f && abs(dy) < 0.5f) {
-            // Close enough – snap to target and stop animating.
-            displayX = cursorX
-            displayY = cursorY
-            updateCursorPosition()
-            injectHoverEvent()
-            isCursorAnimating = false
-        } else {
-            displayX += dx * CURSOR_LERP_FACTOR
-            displayY += dy * CURSOR_LERP_FACTOR
-            updateCursorPosition()
-            injectHoverEvent()
-            Choreographer.getInstance().postFrameCallback(cursorFrameCallback)
+    private val cursorFrameCallback: Choreographer.FrameCallback by lazy {
+        Choreographer.FrameCallback {
+            val dx = cursorX - displayX
+            val dy = cursorY - displayY
+            if (abs(dx) < 0.5f && abs(dy) < 0.5f) {
+                // Close enough – snap to target and stop animating.
+                displayX = cursorX
+                displayY = cursorY
+                updateCursorPosition()
+                injectHoverEvent()
+                isCursorAnimating = false
+            } else {
+                displayX += dx * CURSOR_LERP_FACTOR
+                displayY += dy * CURSOR_LERP_FACTOR
+                updateCursorPosition()
+                injectHoverEvent()
+                Choreographer.getInstance().postFrameCallback(cursorFrameCallback)
+            }
         }
     }
 
