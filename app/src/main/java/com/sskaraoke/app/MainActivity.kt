@@ -258,6 +258,10 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            // Allow the web app to play video programmatically (e.g. when a socket event fires)
+            // without requiring a user tap. Navigation is already locked to TARGET_URL via
+            // shouldOverrideUrlLoading, so only trusted content can trigger autoplay.
+            mediaPlaybackRequiresUserGesture = false
             userAgentString = "Mozilla/5.0 (Linux; Android 9; Android TV) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
