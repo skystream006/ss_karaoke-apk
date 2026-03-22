@@ -24,9 +24,11 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.sskaraoke.app.databinding.ActivityMainBinding
@@ -59,6 +61,10 @@ class MainActivity : AppCompatActivity() {
     private var pendingUsername: String = ""
     private var pendingPassword: String = ""
     private var isPageLoaded = false
+
+    // Fullscreen video support
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
     // Cursor mode – disabled on mobile phones (touch devices), enabled on TV/non-phone devices.
     private var cursorModeEnabled = true
@@ -122,6 +128,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupBackNavigation() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (customView != null) {
+                    customViewCallback?.onCustomViewHidden()
+                    return
+                }
                 if (binding.webView.canGoBack()) {
                     binding.webView.goBack()
                 } else {
@@ -256,6 +266,7 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
             loadWithOverviewMode = true
             useWideViewPort = true
+            mediaPlaybackRequiresUserGesture = false
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             userAgentString = "Mozilla/5.0 (Linux; Android 9; Android TV) AppleWebKit/537.36 " +
@@ -311,6 +322,28 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 binding.progressBar.progress = newProgress
+            }
+
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                if (customView != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customViewCallback = callback
+                binding.fullscreenContainer.addView(view)
+                binding.fullscreenContainer.visibility = View.VISIBLE
+                binding.webView.visibility = View.GONE
+                hideSystemUi()
+            }
+
+            override fun onHideCustomView() {
+                binding.fullscreenContainer.removeView(customView)
+                binding.fullscreenContainer.visibility = View.GONE
+                binding.webView.visibility = View.VISIBLE
+                customView = null
+                customViewCallback = null
+                showSystemUi()
             }
         }
 
@@ -566,5 +599,21 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton(R.string.retry) { _, _ -> loadKaraokeWebsite() }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    // ---------------------------------------------------------------------------
+    // Fullscreen helpers
+    // ---------------------------------------------------------------------------
+
+    private fun hideSystemUi() {
+        WindowInsetsControllerCompat(window, binding.root).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    private fun showSystemUi() {
+        WindowInsetsControllerCompat(window, binding.root)
+            .show(WindowInsetsCompat.Type.systemBars())
     }
 }
