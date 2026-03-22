@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        cursorModeEnabled = !isMobilePhone()
+        cursorModeEnabled = !isTouchFirstDevice()
         if (cursorModeEnabled) binding.cursor.visibility = View.VISIBLE
 
         setupBackNavigation()
@@ -494,18 +494,17 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------------
 
     /**
-     * Returns true when running on a mobile phone (has telephony, no Leanback/TV feature,
-     * and a phone-sized screen with smallest width < 600 dp).
+     * Returns true when running on a touch-first device (has telephony, no Leanback/TV feature).
      * Cursor mode is only useful on TV/non-touch devices where D-pad navigation is the
-     * primary input method; on phones the touchscreen is sufficient.
-     * Tablets (≥ 600 dp smallest width) keep cursor mode enabled even when they have telephony.
+     * primary input method; on phones and tablets the touchscreen is sufficient.
+     * Foldables (e.g. Samsung Z Fold unfolded) and tablets with telephony are also
+     * touch-first devices, so they are treated the same as phones.
      */
-    private fun isMobilePhone(): Boolean {
+    private fun isTouchFirstDevice(): Boolean {
         val pm = packageManager
         if (!pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) return false
         if (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) return false
-        // Phones have a smallest screen width below 600 dp; tablets/large devices do not.
-        return resources.configuration.smallestScreenWidthDp < 600
+        return true
     }
 
     // ---------------------------------------------------------------------------
