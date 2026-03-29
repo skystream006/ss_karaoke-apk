@@ -119,6 +119,30 @@ class MainActivity : AppCompatActivity() {
         loadKaraokeWebsite()
     }
 
+    override fun onResume() {
+        super.onResume()
+        binding.webView.onResume()
+        binding.webView.resumeTimers()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        binding.webView.onPause()
+    }
+
+    /**
+     * Resume the WebView whenever the window regains focus so that a brief focus loss
+     * (e.g. the save-credentials AlertDialog appearing) does not leave the WebView in a
+     * paused/stalled state that interrupts ongoing video playback.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            binding.webView.onResume()
+            binding.webView.resumeTimers()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Choreographer.getInstance().removeFrameCallback(cursorFrameCallback)
@@ -266,13 +290,12 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
             loadWithOverviewMode = true
             useWideViewPort = true
-            mediaPlaybackRequiresUserGesture = false
-            cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             // Allow the web app to play video programmatically (e.g. when a socket event fires)
             // without requiring a user tap. Navigation is already locked to TARGET_URL via
             // shouldOverrideUrlLoading, so only trusted content can trigger autoplay.
             mediaPlaybackRequiresUserGesture = false
+            cacheMode = WebSettings.LOAD_DEFAULT
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             userAgentString = "Mozilla/5.0 (Linux; Android 9; Android TV) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
