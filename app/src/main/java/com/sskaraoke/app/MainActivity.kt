@@ -445,7 +445,6 @@ class MainActivity : AppCompatActivity() {
                     attempt++;
                     var passField = document.querySelector('input[type="password"]');
                     if (passField) {
-                        passField.focus();
                         var descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
                         var nativeSetter = descriptor && descriptor.set;
                         if (nativeSetter) {
