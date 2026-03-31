@@ -2,10 +2,12 @@ package com.sskaraoke.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.ComponentCallbacks2
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.text.InputType
@@ -127,6 +129,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        // webView.onPause() throttles rendering/animations; pauseTimers() is intentionally
+        // NOT called here because it freezes all JavaScript timers globally, including
+        // WebSocket/socket.io heartbeat intervals, which would cause the server to drop
+        // the socket connection whenever the app is briefly backgrounded.
         binding.webView.onPause()
     }
 
@@ -147,6 +153,34 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         Choreographer.getInstance().removeFrameCallback(cursorFrameCallback)
         isCursorAnimating = false
+        binding.webView.apply {
+            stopLoading()
+            clearHistory()
+            removeAllViews()
+            (parent as? android.view.ViewGroup)?.removeView(this)
+            destroy()
+        }
+    }
+
+    /**
+     * Release WebView memory caches when the system signals memory pressure.
+     * On low-RAM devices this prevents the OS from killing the process mid-playback.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (isDestroyed) return
+        when {
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+                // At critical pressure the OS is about to kill processes; purge both the
+                // in-memory and disk caches to reclaim as much memory as possible.
+                binding.webView.clearCache(true)
+            }
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                // At low pressure clear only the in-memory cache so disk-cached resources
+                // can still be reused on the next page load.
+                binding.webView.clearCache(false)
+            }
+        }
     }
 
     private fun setupBackNavigation() {
@@ -302,6 +336,14 @@ class MainActivity : AppCompatActivity() {
 
         // Attach the JavaScript bridge for credential capture
         webView.addJavascriptInterface(CredentialBridge(), "AndroidCredentialBridge")
+
+        // On low-RAM devices the WebView renderer process can be killed by the OS.
+        // Requesting IMPORTANT priority keeps it alive while the app is in the foreground,
+        // and setting waivePriority=true lets the OS reclaim resources when the WebView
+        // is not visible (e.g. app is backgrounded), preventing unnecessary memory pressure.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
+        }
 
         webView.webViewClient = object : WebViewClient() {
 
