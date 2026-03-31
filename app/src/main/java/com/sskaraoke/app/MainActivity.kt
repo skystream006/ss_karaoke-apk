@@ -168,9 +168,18 @@ class MainActivity : AppCompatActivity() {
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            // Pass false to clear only the in-memory cache while keeping disk-cached resources.
-            binding.webView.clearCache(false)
+        if (isDestroyed) return
+        when {
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+                // At critical pressure the OS is about to kill processes; purge both the
+                // in-memory and disk caches to reclaim as much memory as possible.
+                binding.webView.clearCache(true)
+            }
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                // At low pressure clear only the in-memory cache so disk-cached resources
+                // can still be reused on the next page load.
+                binding.webView.clearCache(false)
+            }
         }
     }
 
