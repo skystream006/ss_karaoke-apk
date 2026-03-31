@@ -129,8 +129,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        // webView.onPause() throttles rendering/animations; pauseTimers() is intentionally
+        // NOT called here because it freezes all JavaScript timers globally, including
+        // WebSocket/socket.io heartbeat intervals, which would cause the server to drop
+        // the socket connection whenever the app is briefly backgrounded.
         binding.webView.onPause()
-        binding.webView.pauseTimers()
     }
 
     /**
