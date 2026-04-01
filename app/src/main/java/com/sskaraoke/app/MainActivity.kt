@@ -373,7 +373,6 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 isPageLoaded = true
                 binding.progressBar.visibility = View.GONE
-                injectAutoFocusPreventer(view)
                 injectCredentialDetector(view)
                 tryAutoFill(view)
             }
@@ -435,44 +434,6 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------------
     // JavaScript injection
     // ---------------------------------------------------------------------------
-
-    /**
-     * Injects a script that removes the `autofocus` attribute from all non-password inputs
-     * and suppresses programmatic focus()/select() calls on them, preventing the soft
-     * keyboard from appearing unexpectedly on page load.  Password inputs are left
-     * untouched so that [tryAutoFill] can still focus them normally.
-     */
-    private fun injectAutoFocusPreventer(view: WebView) {
-        val script = """
-            (function() {
-                function preventAutoFocus(root) {
-                    var inputs = root.querySelectorAll('input:not([type="password"]), textarea, select');
-                    inputs.forEach(function(el) {
-                        el.removeAttribute('autofocus');
-                        el.focus = function() {};
-                        el.select = function() {};
-                    });
-                }
-                preventAutoFocus(document);
-                var observer = new MutationObserver(function(mutations) {
-                    mutations.forEach(function(m) {
-                        m.addedNodes.forEach(function(node) {
-                            if (node.nodeType === 1) {
-                                if (node.matches && node.matches('input:not([type="password"]), textarea, select')) {
-                                    node.removeAttribute('autofocus');
-                                    node.focus = function() {};
-                                    node.select = function() {};
-                                }
-                                preventAutoFocus(node);
-                            }
-                        });
-                    });
-                });
-                observer.observe(document.documentElement, { childList: true, subtree: true });
-            })();
-        """.trimIndent()
-        view.evaluateJavascript(script, null)
-    }
 
     /**
      * Injects a script that intercepts form submissions, captures username/password
