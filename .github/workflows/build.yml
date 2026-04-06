@@ -1,8 +1,9 @@
 name: Build APK
 
 on:
-  push:
-    branches: [ "main" ]
+  workflow_run:
+    workflows: [ "Version Bump on PR Merge" ]
+    types: [ completed ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
