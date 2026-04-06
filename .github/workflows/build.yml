@@ -30,9 +30,15 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
+      - name: Rename APK
+        run: |
+          VERSION=$(grep versionName app/build.gradle | awk -F'"' '{print $2}')
+          mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/ss-karaoke-${VERSION}.apk
+          echo "APK_PATH=app/build/outputs/apk/debug/ss-karaoke-${VERSION}.apk" >> $GITHUB_ENV
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: ss-karaoke-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APK_PATH }}
           retention-days: 30
