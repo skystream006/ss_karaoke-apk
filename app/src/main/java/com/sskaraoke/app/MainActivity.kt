@@ -9,6 +9,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
 import android.view.Choreographer
@@ -57,6 +59,8 @@ class MainActivity : AppCompatActivity() {
          * giving a natural spring-like feel without any abrupt restarts on rapid D-pad presses.
          */
         private const val CURSOR_LERP_FACTOR = 0.30f
+        /** Milliseconds of inactivity in fullscreen mode before the cursor is auto-hidden. */
+        private const val CURSOR_HIDE_DELAY_MS = 3_000L
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -76,6 +80,15 @@ class MainActivity : AppCompatActivity() {
     private var displayX = 0f
     private var displayY = 0f
     private var isCursorAnimating = false
+
+    /** Handler used to post the cursor auto-hide runnable on the main thread. */
+    private val cursorHideHandler = Handler(Looper.getMainLooper())
+    /** Runnable that hides the cursor overlay after [CURSOR_HIDE_DELAY_MS] ms of inactivity.
+     *  Only hides if still in fullscreen mode so a late-firing callback does not suppress
+     *  the cursor after the user has already exited fullscreen. */
+    private val hideCursorRunnable = Runnable {
+        if (customView != null) binding.cursor.visibility = View.GONE
+    }
 
     /**
      * Choreographer callback that runs every vsync frame while the cursor is moving.
@@ -153,6 +166,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         Choreographer.getInstance().removeFrameCallback(cursorFrameCallback)
         isCursorAnimating = false
+        cursorHideHandler.removeCallbacks(hideCursorRunnable)
         binding.webView.apply {
             stopLoading()
             clearHistory()
@@ -203,6 +217,7 @@ class MainActivity : AppCompatActivity() {
     /** Forward D-pad / remote keys to the WebView so navigation works on TV. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (isPageLoaded && cursorModeEnabled) {
+            if (event.action == KeyEvent.ACTION_DOWN) showCursorAndResetTimer()
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_DPAD_DOWN,
@@ -243,6 +258,7 @@ class MainActivity : AppCompatActivity() {
             displayX = cursorX
             displayY = cursorY
             updateCursorPosition()
+            showCursorAndResetTimer()
         }
         if (binding.webView.onGenericMotionEvent(event)) {
             return true
@@ -269,11 +285,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Position the cursor overlay View so its centre sits at (displayX, displayY). */
+    /** Position the cursor overlay View so its tip (top-left corner of the arrow) sits at (displayX, displayY). */
     private fun updateCursorPosition() {
-        val halfPx = CURSOR_SIZE_DP * resources.displayMetrics.density / 2f
-        binding.cursor.translationX = displayX - halfPx
-        binding.cursor.translationY = displayY - halfPx
+        binding.cursor.translationX = displayX
+        binding.cursor.translationY = displayY
+    }
+
+    /**
+     * Makes the cursor visible and, when in HTML5 fullscreen mode, (re)starts the
+     * [CURSOR_HIDE_DELAY_MS]-ms inactivity timer that will hide it again.
+     * Call this on every user-input event so the cursor stays visible while the user
+     * is actively navigating and disappears after a period of no interaction.
+     */
+    private fun showCursorAndResetTimer() {
+        if (!cursorModeEnabled) return
+        binding.cursor.visibility = View.VISIBLE
+        cursorHideHandler.removeCallbacks(hideCursorRunnable)
+        if (customView != null) {
+            cursorHideHandler.postDelayed(hideCursorRunnable, CURSOR_HIDE_DELAY_MS)
+        }
     }
 
     /** Inject a synthetic hover-move event at the current rendered cursor position so the
@@ -404,6 +434,8 @@ class MainActivity : AppCompatActivity() {
                 binding.fullscreenContainer.visibility = View.VISIBLE
                 binding.webView.visibility = View.GONE
                 hideSystemUi()
+                // Start the inactivity timer – cursor will hide after 3 s with no input.
+                showCursorAndResetTimer()
             }
 
             override fun onHideCustomView() {
@@ -413,6 +445,9 @@ class MainActivity : AppCompatActivity() {
                 customView = null
                 customViewCallback = null
                 showSystemUi()
+                // Cancel any pending hide and keep the cursor visible outside fullscreen.
+                cursorHideHandler.removeCallbacks(hideCursorRunnable)
+                if (cursorModeEnabled) binding.cursor.visibility = View.VISIBLE
             }
         }
 
