@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_USERNAME = "saved_username"
         private const val KEY_PASSWORD = "saved_password"
         private const val KEY_HAS_CREDENTIALS = "has_credentials"
+        private const val KEY_LAST_URL = "last_url"
 
         /** Size of the cursor indicator in dp. Must match the layout dimension. */
         private const val CURSOR_SIZE_DP = 24f
@@ -405,6 +406,9 @@ class MainActivity : AppCompatActivity() {
                 binding.progressBar.visibility = View.GONE
                 injectCredentialDetector(view)
                 tryAutoFill(view)
+                if (url.startsWith(TARGET_URL)) {
+                    saveLastUrl(url)
+                }
             }
 
             override fun onReceivedError(
@@ -608,6 +612,10 @@ class MainActivity : AppCompatActivity() {
             .apply()
     }
 
+    private fun saveLastUrl(url: String) {
+        getEncryptedPrefs()?.edit()?.putString(KEY_LAST_URL, url)?.apply()
+    }
+
     private fun getEncryptedPrefs(): android.content.SharedPreferences? {
         return try {
             val masterKey = MasterKey.Builder(this)
@@ -651,7 +659,9 @@ class MainActivity : AppCompatActivity() {
         }
         // Either encrypted prefs are unavailable (crypto error) or password is already stored – proceed.
         if (isNetworkAvailable()) {
-            binding.webView.loadUrl(TARGET_URL)
+            val lastUrl = prefs?.getString(KEY_LAST_URL, null)
+            val urlToLoad = if (!lastUrl.isNullOrEmpty() && lastUrl.startsWith(TARGET_URL)) lastUrl else TARGET_URL
+            binding.webView.loadUrl(urlToLoad)
         } else {
             showError(getString(R.string.no_internet))
         }
