@@ -48,6 +48,8 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_PASSWORD = "saved_password"
         private const val KEY_HAS_CREDENTIALS = "has_credentials"
         private const val KEY_LAST_URL = "last_url"
+        private const val KEY_CURRENT_USER = "current_user"
+        private const val KEY_CURRENT_ROLE = "current_role"
 
         /** Size of the cursor indicator in dp. Must match the layout dimension. */
         private const val CURSOR_SIZE_DP = 24f
@@ -422,6 +424,7 @@ class MainActivity : AppCompatActivity() {
                 isPageLoaded = true
                 binding.progressBar.visibility = View.GONE
                 injectCredentialDetector(view)
+                injectUserRoleDetector(view)
                 tryAutoFill(view)
                 if (url.startsWith(TARGET_URL)) {
                     saveLastUrl(url)
@@ -522,6 +525,55 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Injects a script that detects the current user name and role (organizer / guest) from the
+     * page URL path, query parameters, and localStorage, then forwards them to the Android bridge.
+     */
+    private fun injectUserRoleDetector(view: WebView) {
+        val script = """
+            (function() {
+                var segments = window.location.pathname.toLowerCase().split('/').filter(Boolean);
+                var params = new URLSearchParams(window.location.search);
+                var role = '';
+                var user = '';
+
+                // Detect role from exact URL path segments
+                if (segments.indexOf('organizer') !== -1) {
+                    role = 'organizer';
+                } else if (segments.indexOf('guest') !== -1) {
+                    role = 'guest';
+                }
+
+                // Fall back to a 'role' query parameter (allow only known values)
+                if (!role) {
+                    var roleParam = (params.get('role') || '').toLowerCase();
+                    if (roleParam === 'organizer' || roleParam === 'guest') role = roleParam;
+                }
+
+                // Detect user from common localStorage keys
+                var userKeys = ['currentUser', 'username', 'userName', 'user', 'name', 'playerName'];
+                try {
+                    for (var i = 0; i < userKeys.length; i++) {
+                        var val = localStorage.getItem(userKeys[i]);
+                        if (val && val.trim()) { user = val.trim(); break; }
+                    }
+                } catch (e) { /* localStorage unavailable (e.g. cross-origin iframe) */ }
+
+                // Fall back to common query parameters
+                if (!user) {
+                    user = params.get('name') || params.get('user') || params.get('username') || '';
+                }
+
+                if (user || role) {
+                    try {
+                        AndroidCredentialBridge.onUserRoleDetected(user, role);
+                    } catch (e) { /* bridge unavailable */ }
+                }
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(script, null)
+    }
+
+    /**
      * Auto-fills the stored password into the site's password field and clicks the "Enter" button.
      * Uses a polling retry (up to 10 attempts × 500 ms) to handle SPA pages that render
      * their password prompt after the initial page-load event.
@@ -594,6 +646,22 @@ class MainActivity : AppCompatActivity() {
                 promptSaveCredentials()
             }
         }
+
+        /**
+         * Called from JavaScript when the current user name and role are detected on a page.
+         * Runs on a background thread – must post to UI thread for SharedPreferences writes.
+         */
+        @JavascriptInterface
+        fun onUserRoleDetected(user: String, role: String) {
+            // Validate role against the known set; reject any unexpected value.
+            val validatedRole = if (role == "organizer" || role == "guest") role else ""
+            // Strip Unicode control/format characters and limit to a reasonable length.
+            val validatedUser = user
+                .filter { c -> c.category != CharCategory.CONTROL && c.category != CharCategory.FORMAT }
+                .take(100)
+            if (validatedUser.isBlank() && validatedRole.isBlank()) return
+            runOnUiThread { saveUserRole(validatedUser, validatedRole) }
+        }
     }
 
     // ---------------------------------------------------------------------------
@@ -631,6 +699,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveLastUrl(url: String) {
         getEncryptedPrefs()?.edit()?.putString(KEY_LAST_URL, url)?.apply()
+    }
+
+    private fun saveUserRole(user: String, role: String) {
+        val prefs = getEncryptedPrefs() ?: return
+        prefs.edit()
+            .putString(KEY_CURRENT_USER, user)
+            .putString(KEY_CURRENT_ROLE, role)
+            .apply()
     }
 
     private fun getEncryptedPrefs(): android.content.SharedPreferences? {
