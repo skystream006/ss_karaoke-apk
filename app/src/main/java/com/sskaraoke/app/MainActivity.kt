@@ -19,11 +19,13 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewTreeObserver
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import kotlin.math.abs
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
@@ -148,6 +150,21 @@ class MainActivity : AppCompatActivity() {
         // WebSocket/socket.io heartbeat intervals, which would cause the server to drop
         // the socket connection whenever the app is briefly backgrounded.
         binding.webView.onPause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Clear all website data when the user exits the app. isFinishing ensures this runs
+        // only on a real exit (Back/Finish), not on a temporary background (home button).
+        // Saved credentials are stored in encrypted SharedPreferences and are NOT affected.
+        if (isFinishing) {
+            binding.webView.clearCache(true)
+            binding.webView.clearFormData()
+            WebStorage.getInstance().deleteAllData()
+            // removeAllCookies is asynchronous; flush() is called in the callback to guarantee
+            // the cleared state is persisted to disk before the process can be torn down.
+            CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
+        }
     }
 
     /**
