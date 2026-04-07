@@ -522,9 +522,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Auto-fills the stored password into the site's password field and clicks the "Enter" button.
-     * Uses a polling retry (up to 10 attempts × 500 ms) to handle SPA pages that render
-     * their password prompt after the initial page-load event.
+     * Auto-fills the stored username and password into the site's login fields and clicks
+     * the "Enter" button. Uses a polling retry (up to 10 attempts × 500 ms) to handle SPA
+     * pages that render their login prompt after the initial page-load event.
+     * Both username and password are restored so that the same user and role that was active
+     * when the last URL was saved are used again on the next launch.
      */
     private fun tryAutoFill(view: WebView) {
         val prefs = getEncryptedPrefs() ?: return
@@ -533,26 +535,39 @@ class MainActivity : AppCompatActivity() {
         val password = prefs.getString(KEY_PASSWORD, "") ?: return
         if (password.isEmpty()) return
 
+        val username = prefs.getString(KEY_USERNAME, "") ?: ""
         val escapedPass = password.replace("\\", "\\\\").replace("'", "\\'")
+        val escapedUser = username.replace("\\", "\\\\").replace("'", "\\'")
 
         val script = """
             (function() {
                 var maxAttempts = 10;
                 var attempt = 0;
+                function setNativeValue(el, value) {
+                    var descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+                    var nativeSetter = descriptor && descriptor.set;
+                    if (nativeSetter) {
+                        nativeSetter.call(el, value);
+                    } else {
+                        el.value = value;
+                    }
+                    el.dispatchEvent(new Event('input', {bubbles: true}));
+                    el.dispatchEvent(new Event('change', {bubbles: true}));
+                }
                 function tryFill() {
                     attempt++;
                     var passField = document.querySelector('input[type="password"]');
                     if (passField) {
-                        passField.focus();
-                        var descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-                        var nativeSetter = descriptor && descriptor.set;
-                        if (nativeSetter) {
-                            nativeSetter.call(passField, '$escapedPass');
-                        } else {
-                            passField.value = '$escapedPass';
+                        var savedUser = '$escapedUser';
+                        if (savedUser.length > 0) {
+                            var userField = document.querySelector('input[autocomplete="username"], input[name="username"], input[name="user"], input[name="login"], input[name="email"], input[type="email"], input[type="text"]');
+                            if (userField) {
+                                userField.focus();
+                                setNativeValue(userField, savedUser);
+                            }
                         }
-                        passField.dispatchEvent(new Event('input', {bubbles: true}));
-                        passField.dispatchEvent(new Event('change', {bubbles: true}));
+                        passField.focus();
+                        setNativeValue(passField, '$escapedPass');
                         var btn = document.querySelector('button[type="submit"], input[type="submit"]');
                         if (!btn) {
                             var buttons = document.querySelectorAll('button');
