@@ -11,8 +11,8 @@ android {
         applicationId "com.sskaraoke.app"
         minSdk 26
         targetSdk 34
-        versionCode 6
-        versionName "1.00.05"
+        versionCode 7
+        versionName "1.00.06"
     }
 
     buildTypes {
