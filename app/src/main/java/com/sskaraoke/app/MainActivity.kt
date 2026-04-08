@@ -49,6 +49,12 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_HAS_CREDENTIALS = "has_credentials"
         private const val KEY_LAST_URL = "last_url"
 
+        /** URL path segments that identify the guest and organizer pages. */
+        private const val GUEST_PATH = "/guest"
+        private const val ORGANIZER_PATH = "/organizer"
+        /** Query parameter name used to pass the current user to guest/organizer pages. */
+        private const val PARAM_USER = "user"
+
         /** Size of the cursor indicator in dp. Must match the layout dimension. */
         private const val CURSOR_SIZE_DP = 24f
         /** Pixels to move the cursor per D-pad press (at 1× density ≈ 40 px). */
@@ -402,6 +408,14 @@ class MainActivity : AppCompatActivity() {
                 val url = request.url.toString()
                 // Only allow navigation within the target domain
                 return if (url.startsWith(TARGET_URL)) {
+                    // Append the saved username to guest and organizer page URLs
+                    if (isUserParamPage(url)) {
+                        val urlWithUser = appendUserParam(url)
+                        if (urlWithUser != url) {
+                            view.loadUrl(urlWithUser)
+                            return true
+                        }
+                    }
                     false  // let the WebView load it
                 } else {
                     Toast.makeText(
@@ -667,6 +681,33 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------------------
     // Navigation helpers
     // ---------------------------------------------------------------------------
+
+    /** Returns true when [url] points to the guest or organizer page. */
+    private fun isUserParamPage(url: String): Boolean {
+        return try {
+            val path = android.net.Uri.parse(url).path ?: return false
+            path.startsWith(GUEST_PATH) || path.startsWith(ORGANIZER_PATH)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Returns [url] with the saved username appended as a [PARAM_USER] query parameter.
+     * If no username is stored, or the parameter is already present, returns [url] unchanged.
+     */
+    private fun appendUserParam(url: String): String {
+        val prefs = getEncryptedPrefs() ?: return url
+        val username = prefs.getString(KEY_USERNAME, "")
+        if (username.isNullOrBlank()) return url
+        return try {
+            val uri = android.net.Uri.parse(url)
+            if (uri.getQueryParameter(PARAM_USER) != null) return url
+            uri.buildUpon().appendQueryParameter(PARAM_USER, username).build().toString()
+        } catch (e: Exception) {
+            url
+        }
+    }
 
     private fun loadKaraokeWebsite() {
         val prefs = getEncryptedPrefs()
