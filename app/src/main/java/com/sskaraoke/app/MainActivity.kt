@@ -428,6 +428,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            /**
+             * Called whenever the WebView's current URL changes, including client-side
+             * navigations performed via the History API (pushState / replaceState) in
+             * Single Page Applications. [onPageFinished] is NOT triggered for those URL
+             * changes, so without this override the last-accessed URL would never be
+             * updated beyond the initial page load.
+             */
+            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                if (!isReload && url.startsWith(TARGET_URL)) {
+                    saveLastUrl(url)
+                }
+            }
+
             override fun onReceivedError(
                 view: WebView,
                 errorCode: Int,
