@@ -27,7 +27,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
           # Cache writes require a token with write scopes, which is not
           # available for pull requests from forks or workflow_run events.
