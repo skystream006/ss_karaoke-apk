@@ -54,5 +54,12 @@ app/build/outputs/apk/release/app-release-unsigned.apk
 Enable **USB debugging** on your Android device, connect it via USB, then run:
 
 ```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+If installation still fails because an existing app was signed with a different key, uninstall first and then reinstall:
+
+```bash
+adb uninstall com.sskaraoke.app
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
