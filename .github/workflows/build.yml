@@ -8,6 +8,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build Debug APK
@@ -22,7 +25,13 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Cache writes require a token with write scopes, which is not
+          # available for pull requests from forks or workflow_run events.
+          cache-read-only: ${{ github.event_name != 'workflow_dispatch' }}
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
