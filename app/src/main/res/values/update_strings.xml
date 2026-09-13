@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_available">Update %1$s is available.</string>
+    <string name="update_current">You are up to date (version %1$s).</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_busy">An update operation is already in progress.</string>
+    <string name="update_download_title">Downloading update</string>
+    <string name="update_download_progress">Downloading update: %1$d%%</string>
+    <string name="update_cancel">Cancel</string>
+    <string name="update_cancelled">Update cancelled. You can retry from Settings.</string>
+    <string name="update_failed">The update could not be downloaded or verified. Please try again from Settings.</string>
+    <string name="update_permission_title">Allow app updates</string>
+    <string name="update_permission_message">To install this update from the project’s GitHub release, Android must allow SS Karaoke to install unknown apps. On the next screen, allow this source, then return here. Android will still ask you to confirm installation.</string>
+    <string name="update_open_settings">Open settings</string>
+    <string name="update_permission_denied">Installation permission was not granted. You can retry from Settings.</string>
+    <string name="update_unsupported">This device cannot open the required installation or permission screen.</string>
+    <string name="update_install_returned">The installer has closed. If the update was not installed, you can retry from Settings.</string>
+    <string name="update_interrupted">The update was interrupted. Check for updates in Settings to retry.</string>
+</resources>
