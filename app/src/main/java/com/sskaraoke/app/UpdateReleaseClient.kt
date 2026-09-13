@@ -1,5 +1,6 @@
 package com.sskaraoke.app
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -8,33 +9,16 @@ import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-/** Numeric comparison without integer overflow, including arbitrarily large components. */
-internal class UpdateVersion private constructor(private val components: List<String>) :
-    Comparable<UpdateVersion> {
-    override fun compareTo(other: UpdateVersion): Int {
-        for (index in 0 until maxOf(components.size, other.components.size)) {
-            val left = components.getOrElse(index) { "0" }
-            val right = other.components.getOrElse(index) { "0" }
-            val comparison = left.length.compareTo(right.length).takeIf { it != 0 }
-                ?: left.compareTo(right)
-            if (comparison != 0) return comparison
-        }
-        return 0
-    }
-
-    companion object {
-        fun parse(value: String?): UpdateVersion? {
-            if (value == null || !value.matches(Regex("v?[0-9]+(?:\\.[0-9]+)*"))) return null
-            return UpdateVersion(value.removePrefix("v").split('.').map {
-                it.trimStart('0').ifEmpty { "0" }
-            })
-        }
-    }
-}
+internal class UpdateReleaseUnavailableException : IOException("No published stable release")
+internal class UpdateAssetUnavailableException(cause: Exception) : IOException("No supported release APK", cause)
 
 internal data class UpdateRelease(
     val tag: String,
     val version: UpdateVersion,
+    val assets: JSONArray?
+)
+
+internal data class UpdateAsset(
     val downloadUrl: URI,
     val size: Long
 )
@@ -73,27 +57,33 @@ internal class UpdateReleaseClient {
         }
         val tag = json.getString("tag_name")
         val version = UpdateVersion.parse(tag) ?: throw IOException("Invalid release version")
-        val assets = json.getJSONArray("assets")
-        val candidates = mutableListOf<UpdateRelease>()
+        return UpdateRelease(tag, version, json.optJSONArray("assets"))
+    }
+
+    fun selectAsset(release: UpdateRelease): UpdateAsset = try {
+        val assets = release.assets ?: throw IOException("Missing release assets")
+        val candidates = mutableListOf<UpdateAsset>()
         for (index in 0 until assets.length()) {
             val asset = assets.getJSONObject(index)
             if (!asset.getString("name").endsWith(".apk", ignoreCase = true)) continue
             val size = asset.getLong("size")
             if (size !in 1..APK_LIMIT) throw IOException("Invalid APK size")
             val uri = URI(asset.getString("browser_download_url"))
-            validateUrl(uri, false)
+            UpdateUrlPolicy.validate(uri, false)
             if (uri.host != "github.com" ||
                 !uri.rawPath.startsWith("/skystream006/ss_karaoke-apk/releases/download/")) {
                 throw IOException("APK is not a repository release asset")
             }
-            candidates.add(UpdateRelease(tag, version, uri, size))
+            candidates.add(UpdateAsset(uri, size))
         }
         // Do not guess between architecture-specific or otherwise ambiguous packages.
-        return candidates.singleOrNull() ?: throw IOException("No unique release APK")
+        candidates.singleOrNull() ?: throw IOException("No unique release APK")
+    } catch (error: Exception) {
+        throw UpdateAssetUnavailableException(error)
     }
 
-    fun download(release: UpdateRelease, destination: File, progress: (Int) -> Unit) {
-        read(release.downloadUrl, APK_LIMIT, release.size, 15 * 60_000L) { input, _, deadline ->
+    fun download(asset: UpdateAsset, destination: File, progress: (Int) -> Unit) {
+        read(asset.downloadUrl, APK_LIMIT, asset.size, 15 * 60_000L) { input, _, deadline ->
             destination.outputStream().use { output ->
                 val buffer = ByteArray(32 * 1024)
                 var count = 0L
@@ -103,15 +93,15 @@ internal class UpdateReleaseClient {
                     val length = input.read(buffer)
                     if (length < 0) break
                     count += length
-                    if (count > release.size || count > APK_LIMIT) throw IOException("APK too large")
+                    if (count > asset.size || count > APK_LIMIT) throw IOException("APK too large")
                     output.write(buffer, 0, length)
-                    val percent = (count * 100 / release.size).toInt()
+                    val percent = (count * 100 / asset.size).toInt()
                     if (percent != lastProgress) {
                         progress(percent)
                         lastProgress = percent
                     }
                 }
-                if (count != release.size) throw IOException("Truncated APK")
+                if (count != asset.size) throw IOException("Truncated APK")
                 output.fd.sync()
             }
         }
@@ -134,7 +124,7 @@ internal class UpdateReleaseClient {
         val metadata = initial.toString() == LATEST
         repeat(MAX_REDIRECTS + 1) { redirects ->
             checkDeadline(deadline)
-            validateUrl(uri, metadata)
+            UpdateUrlPolicy.validate(uri, metadata)
             val current = uri.toURL().openConnection() as HttpURLConnection
             current.instanceFollowRedirects = false
             current.connectTimeout = 15_000
@@ -150,8 +140,11 @@ internal class UpdateReleaseClient {
                     if (redirects == MAX_REDIRECTS) throw IOException("Too many redirects")
                     val location = current.getHeaderField("Location") ?: throw IOException("Missing redirect")
                     uri = uri.resolve(location)
-                    validateUrl(uri, metadata)
+                    UpdateUrlPolicy.validate(uri, metadata)
                 } else {
+                    if (metadata && status == HttpURLConnection.HTTP_NOT_FOUND) {
+                        throw UpdateReleaseUnavailableException()
+                    }
                     if (status != HttpURLConnection.HTTP_OK) throw IOException("HTTP $status")
                     val size = current.contentLengthLong
                     if (size > limit || (expectedSize != null && size >= 0 && size != expectedSize)) {
@@ -177,17 +170,5 @@ internal class UpdateReleaseClient {
         internal const val APK_LIMIT = 250L * 1024 * 1024
         private const val MAX_REDIRECTS = 5
         private val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
-        private val ASSET_HOSTS = setOf(
-            "github.com", "release-assets.githubusercontent.com",
-            "objects.githubusercontent.com", "github-releases.githubusercontent.com"
-        )
-
-        private fun validateUrl(uri: URI, metadata: Boolean) {
-            val hosts = if (metadata) setOf("api.github.com") else ASSET_HOSTS
-            if (uri.scheme != "https" || uri.host !in hosts || uri.rawUserInfo != null ||
-                uri.port !in setOf(-1, 443) || uri.rawFragment != null) {
-                throw IOException("Untrusted update URL")
-            }
-        }
     }
 }

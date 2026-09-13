@@ -2,6 +2,8 @@
 <resources>
     <string name="update_available">Update %1$s is available.</string>
     <string name="update_current">You are up to date (version %1$s).</string>
+    <string name="update_no_release">No stable release is available yet.</string>
+    <string name="update_asset_unavailable">This release does not contain one supported, trusted APK. Please try again after a compatible APK is published.</string>
     <string name="update_checking">Checking for updates…</string>
     <string name="update_busy">An update operation is already in progress.</string>
     <string name="update_download_title">Downloading update</string>
