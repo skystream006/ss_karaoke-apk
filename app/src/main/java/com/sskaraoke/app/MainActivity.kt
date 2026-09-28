@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var updateManager: UpdateManager
     private var pendingUsername: String = ""
     private var pendingPassword: String = ""
     private var isPageLoaded = false
@@ -128,6 +129,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        updateManager = UpdateManager(this)
+        updateManager.restoreState(savedInstanceState)
+        binding.settingsButton.setOnClickListener { showSettings() }
 
         cursorModeEnabled = isTvDevice()
         if (cursorModeEnabled) binding.cursor.visibility = View.VISIBLE
@@ -135,6 +139,22 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         setupWebView()
         loadKaraokeWebsite()
+        if (savedInstanceState == null) updateManager.startupCheck()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        updateManager.saveState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun showSettings() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings)
+            .setItems(arrayOf(getString(R.string.check_for_updates))) { _, _ ->
+                updateManager.checkForUpdates()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     override fun onResume() {
@@ -181,6 +201,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        updateManager.destroy()
         super.onDestroy()
         Choreographer.getInstance().removeFrameCallback(cursorFrameCallback)
         isCursorAnimating = false
@@ -234,6 +255,11 @@ class MainActivity : AppCompatActivity() {
 
     /** Forward D-pad / remote keys to the WebView so navigation works on TV. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_MENU && customView == null) {
+            if (event.action == KeyEvent.ACTION_UP) showSettings()
+            return true
+        }
+        if (binding.settingsButton.hasFocus()) return super.dispatchKeyEvent(event)
         if (isPageLoaded && cursorModeEnabled) {
             if (event.action == KeyEvent.ACTION_DOWN) showCursorAndResetTimer()
             when (event.keyCode) {
@@ -346,6 +372,16 @@ class MainActivity : AppCompatActivity() {
         updateCursorPosition()
 
         val webView = binding.webView
+        val location = IntArray(2)
+        webView.getLocationOnScreen(location)
+        val settingsBounds = android.graphics.Rect()
+        if (customView == null &&
+            binding.settingsButton.getGlobalVisibleRect(settingsBounds) &&
+            settingsBounds.contains(location[0] + displayX.toInt(), location[1] + displayY.toInt())
+        ) {
+            binding.settingsButton.performClick()
+            return
+        }
         val now = SystemClock.uptimeMillis()
         val down = MotionEvent.obtain(now, now,                    MotionEvent.ACTION_DOWN, displayX, displayY, 0)
         val up   = MotionEvent.obtain(now, now + CLICK_DURATION_MS, MotionEvent.ACTION_UP,   displayX, displayY, 0)
@@ -468,6 +504,7 @@ class MainActivity : AppCompatActivity() {
                 binding.fullscreenContainer.addView(view)
                 binding.fullscreenContainer.visibility = View.VISIBLE
                 binding.webView.visibility = View.GONE
+                binding.settingsButton.visibility = View.GONE
                 hideSystemUi()
                 // Start the inactivity timer – cursor will hide after 3 s with no input.
                 showCursorAndResetTimer()
@@ -477,6 +514,7 @@ class MainActivity : AppCompatActivity() {
                 binding.fullscreenContainer.removeView(customView)
                 binding.fullscreenContainer.visibility = View.GONE
                 binding.webView.visibility = View.VISIBLE
+                binding.settingsButton.visibility = View.VISIBLE
                 customView = null
                 customViewCallback = null
                 showSystemUi()
