@@ -3,6 +3,8 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def signingStore = System.getenv('APK_SIGNING_STORE_FILE')
+
 android {
     namespace 'com.sskaraoke.app'
     compileSdk 34
@@ -15,8 +17,34 @@ android {
         versionName "1.00.11"
     }
 
+    signingConfigs {
+        // Checked-in debug key: every build (local, CI, and manual release) that does not
+        // supply a distribution key uses this identical key, so all such builds share one
+        // signing certificate and can update one another. See app/debug.keystore.
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        if (signingStore != null) {
+            distribution {
+                storeFile file(signingStore)
+                storePassword System.getenv('APK_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('APK_SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('APK_SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
+            // Uses the optional distribution key when configured, otherwise the same
+            // checked-in debug key so releases are always installable and updatable.
+            signingConfig signingStore != null ? signingConfigs.distribution : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

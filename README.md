@@ -37,10 +37,39 @@ app/build/outputs/apk/debug/app-debug.apk
 The output APK will be located at:
 
 ```
-app/build/outputs/apk/release/app-release-unsigned.apk
+app/build/outputs/apk/release/app-release.apk
 ```
 
-> **Note:** The release build is unsigned by default. To distribute the app you will need to [sign the APK](https://developer.android.com/studio/publish/app-signing) with a keystore before installing it on a device.
+## Signing and in-app updates
+
+Android only installs an update when it is signed with the same certificate as the
+installed app. To keep every build updatable, the repository includes a shared debug
+keystore at `app/debug.keystore` (store/key password `android`, alias `androiddebugkey`).
+Debug builds, CI artifacts, and manual releases all use this key unless a distribution
+key is supplied, so they can update one another.
+
+> **Note:** This key is public. Anyone can sign an APK with it, so treat it as suitable
+> for personal/sideloaded distribution only.
+
+To sign releases with a private distribution key instead, set these environment
+variables (or repository secrets for the release workflow):
+
+| Workflow secret | Gradle environment variable |
+| --- | --- |
+| `APK_SIGNING_KEYSTORE_BASE64` (base64 keystore) | `APK_SIGNING_STORE_FILE` (path to keystore) |
+| `APK_SIGNING_STORE_PASSWORD` | `APK_SIGNING_STORE_PASSWORD` |
+| `APK_SIGNING_KEY_ALIAS` | `APK_SIGNING_KEY_ALIAS` |
+| `APK_SIGNING_KEY_PASSWORD` | `APK_SIGNING_KEY_PASSWORD` |
+
+Switching keys changes the signing certificate, so existing installs must be uninstalled once.
+
+## Publishing a release
+
+Run **Actions → Manual Android Release → Run workflow**. It builds and verifies a signed
+release APK from `main` and publishes it as the latest GitHub release tagged `v<versionName>`
+with a single `ss-karaoke-v<versionName>.apk` asset. The app checks this release at startup
+and from **Settings → Check for updates** (the semi-transparent button in the bottom-right
+corner, or the remote's Menu key), then downloads and installs it.
 
 ### Building with Android Studio
 

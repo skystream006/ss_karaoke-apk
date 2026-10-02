@@ -1,0 +1,112 @@
+name: Manual Android Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: manual-android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Check release signing configuration
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.APK_SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] && [ -z "$STORE_PASSWORD" ] \
+            && [ -z "$KEY_ALIAS" ] && [ -z "$KEY_PASSWORD" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No APK_SIGNING_* secrets configured; building with the checked-in debug key (app/debug.keystore), same as CI artifacts."
+          elif [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] \
+            && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Configure all four APK_SIGNING_* secrets documented in README.md, or remove them all to release with the checked-in debug key."
+            exit 1
+          fi
+      - name: Restore distribution signing key
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.APK_SIGNING_KEYSTORE_BASE64 }}
+          APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
+          APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
+          APK_SIGNING_KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$APK_SIGNING_STORE_FILE"
+          if ! keytool -list -keystore "$APK_SIGNING_STORE_FILE" \
+            -storepass:env APK_SIGNING_STORE_PASSWORD \
+            -alias "$APK_SIGNING_KEY_ALIAS" >/dev/null; then
+            echo "::error::The release keystore is invalid, or its store password/key alias does not match the configured signing secrets."
+            exit 1
+          fi
+      - name: Test and build release APK
+        env:
+          SIGNING_ENABLED: ${{ steps.signing.outputs.enabled }}
+          APK_SIGNING_STORE_PASSWORD: ${{ secrets.APK_SIGNING_STORE_PASSWORD }}
+          APK_SIGNING_KEY_ALIAS: ${{ secrets.APK_SIGNING_KEY_ALIAS }}
+          APK_SIGNING_KEY_PASSWORD: ${{ secrets.APK_SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ "$SIGNING_ENABLED" = "true" ]; then
+            export APK_SIGNING_STORE_FILE="${RUNNER_TEMP}/distribution.jks"
+          fi
+          sh ./gradlew :app:testDebugUnitTest :app:assembleRelease
+      - name: Verify and name installable APK
+        id: apk
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/release/output-metadata.json"))["elements"][0]["versionName"])')
+          apk=$(python3 -c 'import json; print(json.load(open("app/build/outputs/apk/release/output-metadata.json"))["elements"][0]["outputFile"])')
+          apksigner=$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          if [ -z "$apksigner" ]; then
+            echo "::error::Android SDK apksigner is required to verify the release."
+            exit 1
+          fi
+          "$apksigner" verify --verbose --print-certs "app/build/outputs/apk/release/${apk}"
+          name="ss-karaoke-v${version}"
+          cp "app/build/outputs/apk/release/${apk}" "${name}.apk"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.name }}.apk
+          if-no-files-found: error
+      - name: Publish latest GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.apk.outputs.version }}
+          APK_NAME: ${{ steps.apk.outputs.name }}
+        run: |
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists; leaving it unchanged."
+            exit 0
+          fi
+          gh release create "$tag" "${APK_NAME}.apk" \
+            --target "$(git rev-parse HEAD)" --title "SS Karaoke ${VERSION}" \
+            --generate-notes --latest
+      - name: Remove signing key
+        if: always()
+        env:
+          APK_SIGNING_STORE_FILE: ${{ runner.temp }}/distribution.jks
+        run: rm -f "$APK_SIGNING_STORE_FILE"
