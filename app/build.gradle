@@ -3,6 +3,21 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def gitOutput = { String... arguments ->
+    providers.exec {
+        workingDir rootDir
+        commandLine(['git'] + arguments.toList())
+    }.standardOutput.asText.get().trim()
+}
+
+// Versions are derived from Git history, so merging a pull request into main bumps the
+// version automatically without committing anything back to the repository.
+if (gitOutput('rev-parse', '--is-shallow-repository') != 'false') {
+    throw new GradleException('APK versioning requires full Git history. Run git fetch --unshallow.')
+}
+def revision = gitOutput('rev-list', '--first-parent', '--count', 'HEAD').toInteger()
+def signingStore = System.getenv('APK_SIGNING_STORE_FILE')
+
 android {
     namespace 'com.sskaraoke.app'
     compileSdk 34
@@ -11,12 +26,38 @@ android {
         applicationId "com.sskaraoke.app"
         minSdk 26
         targetSdk 34
-        versionCode 12
-        versionName "1.00.11"
+        versionCode revision + 1
+        versionName "1.1.$revision"
+    }
+
+    signingConfigs {
+        // Checked-in debug key: every build (local, CI, and manual release) that does not
+        // supply a distribution key uses this identical key, so all such builds share one
+        // signing certificate and can update one another. See app/debug.keystore.
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        if (signingStore != null) {
+            distribution {
+                storeFile file(signingStore)
+                storePassword System.getenv('APK_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('APK_SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('APK_SIGNING_KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
+            // Uses the optional distribution key when configured, otherwise the same
+            // checked-in debug key so releases are always installable and updatable.
+            signingConfig signingStore != null ? signingConfigs.distribution : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
