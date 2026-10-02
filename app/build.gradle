@@ -3,6 +3,19 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def gitOutput = { String... arguments ->
+    providers.exec {
+        workingDir rootDir
+        commandLine(['git'] + arguments.toList())
+    }.standardOutput.asText.get().trim()
+}
+
+// Versions are derived from Git history, so merging a pull request into main bumps the
+// version automatically without committing anything back to the repository.
+if (gitOutput('rev-parse', '--is-shallow-repository') != 'false') {
+    throw new GradleException('APK versioning requires full Git history. Run git fetch --unshallow.')
+}
+def revision = gitOutput('rev-list', '--first-parent', '--count', 'HEAD').toInteger()
 def signingStore = System.getenv('APK_SIGNING_STORE_FILE')
 
 android {
@@ -13,8 +26,8 @@ android {
         applicationId "com.sskaraoke.app"
         minSdk 26
         targetSdk 34
-        versionCode 12
-        versionName "1.00.11"
+        versionCode revision + 1
+        versionName "1.1.$revision"
     }
 
     signingConfigs {

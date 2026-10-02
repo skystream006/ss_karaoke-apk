@@ -16,6 +16,9 @@ git clone https://github.com/skystream006/ss_karaoke-apk.git
 cd ss_karaoke-apk
 ```
 
+> **Note:** Version numbers are derived from Git history, so the build needs a full
+> (non-shallow) clone. If you cloned with `--depth`, run `git fetch --unshallow` first.
+
 ### 2. Build a debug APK
 
 ```bash
@@ -62,6 +65,19 @@ variables (or repository secrets for the release workflow):
 | `APK_SIGNING_KEY_PASSWORD` | `APK_SIGNING_KEY_PASSWORD` |
 
 Switching keys changes the signing certificate, so existing installs must be uninstalled once.
+
+## Versioning
+
+Versions are computed at build time from the number of first-parent commits on the
+current branch (`git rev-list --first-parent --count HEAD`):
+
+- `versionName` = `1.1.<count>`
+- `versionCode` = `<count> + 1`
+
+Every pull request merged into `main` adds a first-parent commit, so the version bumps
+automatically without any commit being pushed back to the repository. After a merge, the
+**PR Release Reminder** workflow comments on the pull request with a link to run the
+manual release.
 
 ## Publishing a release
 
