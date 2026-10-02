@@ -38,6 +38,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.sskaraoke.app.databinding.ActivityMainBinding
+import com.sskaraoke.app.databinding.DialogSettingsBinding
 
 class MainActivity : AppCompatActivity() {
 
@@ -148,13 +149,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettings() {
-        AlertDialog.Builder(this)
+        val settingsBinding = DialogSettingsBinding.inflate(layoutInflater)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.settings)
-            .setItems(arrayOf(getString(R.string.check_for_updates))) { _, _ ->
-                updateManager.checkForUpdates()
-            }
+            .setView(settingsBinding.root)
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create()
+        settingsBinding.checkForUpdatesButton.setOnClickListener {
+            dialog.dismiss()
+            updateManager.checkForUpdates()
+        }
+        dialog.show()
     }
 
     override fun onResume() {
